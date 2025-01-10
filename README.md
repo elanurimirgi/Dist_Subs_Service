@@ -1,65 +1,67 @@
 # Dağıtık Abonelik Sistemi (Distributed Subscriber Service)
 
-Bu proje, dağıtık bir abonelik sistemi oluşturmak amacıyla geliştirilmiştir. Sistem, sunucular, istemciler, yönetim paneli ve Protobuf kullanılarak tasarlanmış olup, örnek bir akış, sistem görselleri ve dosya çalıştırma detayları aşağıda açıklanmıştır.
+Bu proje, **Sistem Programlama** dersi kapsamında geliştirilmiş bir **Dağıtık Abonelik Sistemi** uygulamasıdır. Projede, üç adet çok iş parçacıklı sunucu (multithreaded server) ve bir istemci sistemi kullanılarak hata-toleranslı bir abonelik hizmeti sunulmaktadır. Sistem, aşağıda açıklanan **HASUP (Hata-Tolere Abonelik Servisi Üyelik Protokolü)** ile çalışmaktadır.
 
-## Örnek Bir Akış
-Server1.java, Server2.java ve Server3.java sırasıyla koşturulup, kendi aralarında TCP soketleri ile “connection” oluşturmalıdır. Bu olaydan 6 adet connection meydana gelmelidir. (TCP connection oluşturmak için herhangi bir gönderime gerek olmadığını hatırlayınız.)
+## Özgün Katkılar
+- **Elanur:** Java Sunucu ve Dağıtık Sistem,
+- **Ezgi:** Admin ve Plotter İstemcileri,
+- **Ayşenur:** Client İşlemci ve Protobuf Tanımları.
 
-admin.rb, kendisi ile aynı dizinde bulunan “dist_subs.conf” dosyasını okuyup; Server1.java, Server2.java, Server3.java’ ya başlama “STRT” emrini verir. dist_subs.conf dosyasının içerisinde şimdilik sadece tek satırlık “fault_tolerance_level = X” değişkeni bulunmalıdır. Dosyadan hata tolerans seviyesi okunup Configuration sınıfından bir nesne construct edilmelidir. Configuration sınıfından türetilecek nesnenin setlenecek özellikleri:
+## Proje Özeti
 
-fault_tolerance_level = 1 
-method = STRT
+Bu proje, TCP/IP soket programlama kullanılarak geliştirilmiştir ve dağıtık sistemlerin temel özelliklerini içermektedir:
 
-Server1.java, Server2.java, Server3.java sunucuları, admin.rb tarafından gelen bu isteğin başarılı ve başarısız sonuçlandığına dair Message tipinde bir nesne göndermelidir. Message nesnesine ait alanların setlenmesi:
+- **Hata Toleransı:**
+  - **Hata Toleransı 1:** Sistemin bir sunucu hatasında çalışmaya devam edebilmesini sağlar.
+  - **Hata Toleransı 2:** İki sunucu hatasında da çalışabilirliği garanti eder.
+- **Protokol Tabanlı Haberleşme:**
+  - HASUP protokolü, sunucu ve istemciler arasında sınıf tabanlı bir haberleşme sağlar.
+  - Protobuf ile veri aktarımı gerçekleştirilmiştir.
+- **Thread-Safe İşlem:**
+  - Sunucu listelerine erişim, eş zamanlı istemciler için güvenli hale getirilmiştir.
 
-demand = STRT 
-response = YEP
+---
 
-veya
+## ServerX.java özellikleri
+- **Başlatma:** `admin.rb` aracılığıyla başlatılabilir.
+- **Hata Toleransı:** Hata toleransı 1 prensibiyle çalışmaktadır (1 sunucu hata verdiğinde hizmet devam eder).
+- **Protokol Desteği:** HASUP protokolü kullanılarak abonelik işlemleri gerçekleştirilir.
+- **Protobuf Tabanlı Haberleşme:** 
+  - **Subscriber Nesnesi:** Abonelik bilgilerini içerir.
+  - **Capacity Nesnesi:** Sunucu doluluk bilgilerini içerir.
+  - **Configuration Nesnesi:** Yönetici tarafından gönderilen başlangıç ayarlarını taşır.
+- **Eşzamanlılık:** Eşzamanlı istemci erişimleri için thread-safe veri yönetimi sağlanır.
 
-	demand = STRT 
-response = NOP
+## plotter.py Özellikleri
+-"Sunucu doluluk oranlarını anlık olarak grafik ile gösterir, kapasite bilgilerini 5 saniyede bir günceller,
+her sunucu için ayrı bir renk ile bilgi aktarımı sağlar" istenmektedir fakat yaşanan problemlerden ötürü grafikte
+görselleştirme yapılamamıştır.
 
-admin.rb, 3. adımdaki başlat emrine karşın sunuculardan gelen dönütlere yani Message nesnelerine bakar. “response = YEP” olarak dönen sunuculara 5 sn’ de bir kapasite doluluklarını sorar. Sorgu işlemi için de Message tipinde bir nesne, sunuculara gönderilmelidir. Message nesnesine ait alanların setlenmesi:
+## admin.rb Özellikleri
+- **Konfigürasyon:** 
+  - `dist_subs.conf` dosyasını okuyarak sunucuları başlatır.
+  - Hata toleransı seviyesi ve başlangıç ayarlarını sunuculara iletir.
+- **Kapasite Kontrolü:** 5 saniyede bir sunucuların doluluk oranlarını sorgular.
+- **Yönetim:** Başarı ve hata durumlarını kontrol eder, gerekli işlemleri başlatır.
 
-İstek atılan Message nesnesi:
-demand = CPCTY 
-response = null
+## Abonelik İşlemleri
+1. **Abone Olma (SUBS):** İstemciden gelen abonelik taleplerini işler.
+2. **Giriş Yapma (ONLN):** Abonenin çevrimiçi durumunu günceller.
+3. **Çıkış Yapma (OFFL):** Abonenin çevrimdışı durumunu günceller.
+4. **Silme (DEL):** Abonenin sistemden silinmesini sağlar.
 
-Server1’ den gelebilecek Capacity nesnesi cevabı:
-server1_status : 1000
-timestamp : 1729807522
-
-Server2’ den gelebilecek Capacity nesnesi cevabı:
-server2_status : 1000
-timestamp : 1729807524
-
-Server3’ ten gelebilecek Capacity nesnesi cevabı:
-server3_status : 1000
-timestamp : 1729807526
-
-Server1.java, Server2.java, Server3.java sunucularına, admin.rb tarafından 5 sn.’ de bir atılan kapasite isteklerine karşın cevap aldığı Capacity tipindeki bir nesneleri plotter.py sunucusuna göndermelidir. plotter.py sunucusu anlık olarak doluluk miktarlarını aşağıdaki gibi veya benzer bir şekilde plot etmelidir. Grafikte hangi rengin kaç numaralı sunucuya ait olduğu bilgisi de gösterilmelidir. 
+## Ekip Üyeleri
+- **22060360 Elanur İmirgi**
+- **22060346, Ezgi Şaşı**
+- **22060330, Ayşenur Sunay**
 
 
-İlk aşamada Server1.java, Server2.java ve Server3.java sunucuları “fault_tolerance_level = 1” olarak seçildiğinde hizmet verebiliyor olmalıdır. İstemcilerden gelebilecek talepler Subscriber sınıfından inşa edilmiş bir nesne şeklinde olacaktır. Abone olma ve abonelikten çıkma Subscriber nesnesi örneği:
+## Sunum Videosu Linki
 
-demand = SUBS //demand types SUBS, DEL, UPDT, ONLN, OFFL
-ID : 12 
-name_surname : “Jane DOE” 
-start_date : 1729802522
-last_accessed : 1729806522 
-interests : [“sports”, “lifestyle”, “cooking”, “psychology”]
-isOnline : boolean 
+[https://youtu.be/Zc39sInlSmI](https://youtu.be/Zc39sInlSmI)
 
-demand = DEL
-ID : 12 
-name_surname : // null olabilir
-start_date : // null olabilir
-last_accessed : // null olabilir
-interests : // null olabilir
-isOnline : // null olabilir
 
-İlk aşamada demand tiplerinden abone olmak anlamına gelen SUBS; abonelikten çıkmak anlamına gelen DEL aşamalarını gerçekleyiniz.
+## Sistem Mimarisini Açıklayan Görseller
 
 ![sist](https://github.com/user-attachments/assets/065e1792-6fec-43bb-8e4c-eb2c709501ff)
 
