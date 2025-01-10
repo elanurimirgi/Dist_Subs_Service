@@ -1,66 +1,81 @@
 import socket
+import json
+import time
 import matplotlib.pyplot as plt
-from collections import deque
-import threading
-from capacity_pb2 import Capacity
-import numpy as np  
+from datetime import datetime
 
-PLOTTER_PORT = 5005
-ADMIN_PORT = 5004  
+class Plotter:
+    def __init__(self):
+        self.host = 'localhost'
+        self.ports = [5001, 5002, 5003]  # Sunucuların portları
+        self.server_data = {1: [], 2: [], 3: []}  # Sunucuların kapasite verileri
+        self.timestamps = {1: [], 2: [], 3: []}  # Sunucuların zaman damgaları
 
-capacity_data = {1: deque(maxlen=100), 2: deque(maxlen=100), 3: deque(maxlen=100)}
+    # Sunuculardan kapasite verisini alır
+    def collect_data(self):
+        for port in self.ports:
+            try:
+                socket_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                socket_connection.connect((self.host, port))
+                socket_connection.sendall(b"CAPACITY_INFO")
 
-data_lock = threading.Lock()
+                # Sunucudan gelen yanıtı al
+                response = socket_connection.recv(1024).decode('utf-8')
+                data = self.parse_capacity_response(response)
 
-def receive_capacity_data(connection):
-    while True:
-        received_data = connection.recv(1024)
-        if not received_data:
-            break
-        capacity = Capacity()
-        capacity.ParseFromString(received_data)
+                if data:
+                    server_id = data['server_id']
+                    server_status = data['server_status']
+                    timestamp = data['timestamp']
 
-        with data_lock:
-            capacity_data[capacity.server_id].append(capacity.value)
+                    # Kapasite ve zaman damgasını kaydet
+                    self.server_data[server_id].append(server_status)
+                    self.timestamps[server_id].append(self.convert_timestamp_to_time(timestamp))
+                else:
+                    print(f"Invalid response from server on port {port}")
+            except Exception as e:
+                print(f"Error connecting to server on port {port}: {e}")
+            finally:
+                socket_connection.close()
 
-def plot_capacity_data():
-    plt.ion()
-    fig, ax = plt.subplots()
-    
-    colors = {1: 'cyan', 2: 'magenta', 3: 'yellow'}
-    markers = {1: 'o', 2: 's', 3: '^'} 
-    linestyles = {1: '-', 2: '--', 3: '-.'}
-    
-    lines = {server_id: ax.plot([], [], label=f"Sunucu {server_id}", color=color, marker=marker, linestyle=linestyle)[0]
-             for server_id, (color, marker, linestyle) in enumerate(zip(colors.values(), markers.values(), linestyles.values()), 1)}
+    # JSON formatındaki kapasite yanıtını parse etme
+    def parse_capacity_response(self, response):
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            print("Failed to parse the response.")
+            return None
 
-    ax.legend()
-    ax.set_xlabel("Zaman (s)")
-    ax.set_ylabel("Kapasite (%)")
-    ax.set_title("Sunucu Kapasitesi Zamanla")
+    # UNIX epoch zamanını okunabilir formata dönüştürme
+    def convert_timestamp_to_time(self, timestamp):
+        return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
-    while True:
-        with data_lock:
-            for server_id, line in lines.items():
-                data = list(capacity_data[server_id])
-                line.set_data(np.arange(len(data)), data) 
-            ax.relim()
-            ax.autoscale_view()
-        plt.pause(0.5) 
+    # Verileri görselleştirir
+    def plot_data(self):
+        # Eğer hiç veri yoksa grafiğini çizmeyi durdur
+        if not any(self.server_data.values()):
+            print("No data collected yet. Waiting for server responses...")
+            return
 
-def main():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.bind(('localhost', ADMIN_PORT))
-        server.listen(3)
+        plt.figure(figsize=(10, 6))
 
-        def accept_clients():
-            while True:
-                connection, _ = server.accept()
-                threading.Thread(target=receive_capacity_data, args=(connection,), daemon=True).start()
+        # Her sunucu için veriyi plotla
+        for server_id, capacities in self.server_data.items():
+            if capacities:
+                plt.plot(self.timestamps[server_id], capacities, label=f"Server {server_id}")
 
-        threading.Thread(target=accept_clients, daemon=True).start()
-
-        plot_capacity_data()
+        plt.xlabel('Timestamp')
+        plt.ylabel('Capacity')
+        plt.title('Server Capacity Over Time')
+        plt.legend()
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
 
 if __name__ == "__main__":
-    main()
+    plotter = Plotter()
+    while True:
+        print("Collecting data...")
+        plotter.collect_data()
+        plotter.plot_data()
+        time.sleep(5)
